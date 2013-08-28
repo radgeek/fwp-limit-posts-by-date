@@ -18,6 +18,10 @@ License: GPL
  * project and for commissioning this add-on module.
  */
 
+ /*DBG*/ add_action('init', function () {
+ 		 add_theme_support('post-thumbnails');
+ });
+ 
 $dater = new FWPLimitPostsByDate;
 
 class FWPLimitPostsByDate {
@@ -313,6 +317,20 @@ class FWPLimitPostsByDate {
 		'default-input-value' => 'default',
 		'labels' => $peaLabels,
 		);
+
+		$petSelector = array(
+		'keep' => 'Nothing. The image file will be kept unchanged in the upload directory.',
+		'nuke' => 'Clean up old image, if possible. If the deleted post was the only one that had this image set as its Featured Image, then the orphaned image will be deleted from the upload directory.'
+		);
+		
+		$petParams = array(
+		'input-name' => 'post_expiration_thumbnail',
+		'setting-default' => NULL,
+		'global-setting-default' => 'keep',
+		'default-input-value' => 'default',
+		'labels' => $peaLabels,
+		);
+
 	?>
 		<style type="text/css">
 		.date-error { background-color: #F77 !important; }
@@ -433,6 +451,13 @@ class FWPLimitPostsByDate {
 			$peaSelector, $peaParams
 		);
 		?>
+		<h4 style="margin-top: 1.0em; font-weight: normal; clear: left">If an expired post is deleted from the system, and that post has a Featured Image set, what should be done with its Featured Image?</h4>
+		<?php
+		$page->setting_radio_control(
+			'post expiration thumbnail', 'post_expiration_thumbnail',
+			$petSelector, $petParams
+		);
+		?>
 
 		<h4 style="margin-top; font-weight: normal; clear: left">Apply to existing <?php print $page->these_posts_phrase(); ?>...</h4>
 		<p>You can apply this expiration-date setting retroactively to <?php print $page->these_posts_phrase(); ?> which have already been syndicated: <input type="submit" name="save[retroexpiration]" value="Apply retroactively" class="button" /></p>
@@ -520,14 +545,25 @@ class FWPLimitPostsByDate {
 				$page->update_setting('post number filter', $N);
 			endif;
 			
+			if (isset($params['post_expiration_thumbnail'])) :
+				$page->update_setting('post_expiration_thumbnail', $params['post_expiration_thumbnail']);
+			endif;
+			
 			if (isset($params['save']) and is_array($params['save'])
 			and array_key_exists('retroexpiration', $params['save'])) :
+				// This could potentially be a pretty big set
+				// to move through. So let's take it one chunk
+				// at a time.
+						
 				$query_params[0] = array(
+				'ignore_sticky_posts' => true,
 				'post_type' => 'post',
 				'post_status' => 'publish',
-				'posts_per_page' => -1,
+				'posts_per_page' => 50,
+				'paged' => $pg,
 				'meta_key' => 'syndication_feed_id',
 				);
+				
 				if ($page->for_feed_settings()) :
 					$query_params[0]['meta_value'] = $page->link->id;
 					$span = $page->link->setting('post expiration date', 'post_expiration_date', NULL);
@@ -539,39 +575,56 @@ class FWPLimitPostsByDate {
 				$query_params[1] = $query_params[0];
 				$query_params[1]['post_status'] = 'expired';
 
+				$nPages = -1; $pg = 1;
 				foreach ($query_params as $qp) :
-					$q = new WP_Query($qp);
-					
-					while ($q->have_posts()) : $q->the_post();
-						// For now, there's no good way to get first-appearance date
-						// So we just have to use the UTC publication date no matter
-						// what....
-						$basis = (int) get_post_time('U', /*gmt=*/ true, $q->post->ID);
+					while (($nPages < 0) or ($pg <= $nPages)) : 
+						$q = new WP_Query($qp);
+
+						while ($q->have_posts()) :
+							$q->the_post();
+							
+							// For now, there's no
+							// good way to get
+							// first-appearance date
+							// So we just have to
+							// use the UTC
+							// publication date no
+							// matter what....
+							$basis = (int) get_post_time('U', /*gmt=*/ true, $q->post->ID);
 						
-						$ts = $this->to_ts($span, $basis, /*past bias=*/ false);
-						if (!is_null($ts) and $ts > 0) :
-							update_post_meta(
+							$ts = $this->to_ts($span, $basis, /*past bias=*/ false);
+							if (!is_null($ts) and $ts > 0) :
+								update_post_meta(
 								$q->post->ID,
 								'_syndication_expiration_date',
 								$ts
-							);
-							update_post_meta(
+								);
+								update_post_meta(
 								$q->post->ID,
 								'_syndication_expiration_action',
 								$action
-							);
-						else :
-							delete_post_meta($q->post->ID, '_syndication_expiration_date');
-							delete_post_meta($q->post->ID, '_syndication_expiration_action');
+								);
+							else :
+								delete_post_meta($q->post->ID, '_syndication_expiration_date');
+								delete_post_meta($q->post->ID, '_syndication_expiration_action');
+							endif;
+							if (($q->post->post_status == 'expired') and ($ts > time())) :
+								$old_status = $q->post->post_status;
+								set_post_field('post_status', 'publish', $q->post->ID);
+								wp_transition_post_status('publish', $old_status, $q->post);
+							endif;
+							FeedWordPress::diagnostic('expiration:mark', 'Previously syndicated post ['.esc_html($q->post->guid).'], status '.$q->post->post_status.' is marked to expire '.date('r', $ts));
+						endwhile; // $q->have_posts()
+						
+						if (isset($q->max_num_pages)) :
+							$nPages = intval($q->max_num_pages);
 						endif;
-						if (($q->post->post_status == 'expired') and ($ts > time())) :
-							$old_status = $q->post->post_status;
-							set_post_field('post_status', 'publish', $q->post->ID);
-							wp_transition_post_status('publish', $old_status, $q->post);
-						endif;
-						FeedWordPress::diagnostic('expiration:mark', 'Previously syndicated post ['.esc_html($q->post->guid).'], status '.$q->post->post_status.' is marked to expire '.date('r', $ts));
-					endwhile;
-				endforeach;
+						
+						$pg++;
+						$qp['paged'] = $pg;
+												
+					endwhile; // (($nPages < 0) or ($pg <= $nPages)) :
+				endforeach; // $query_params as $qp
 			endif;
 		endif;
 	} /* FWPLimitPostsByDate::save_settings () */
@@ -701,11 +754,12 @@ class FWPLimitPostsByDate {
 
 	function process_expirations ($delta) {
 		global $post;
-
+		global $wpdb;
+		
 		$q = new WP_Query(array(
 		'post_type' => 'post',
 		'post_status' => 'publish',
-		'posts_per_page' => 15,
+		'posts_per_page' => 25,
 		// Let's make sure this stays safe, sane and consensual. If there's a
 		// lot more to check, we'll pick them up on the next go-round.
 		'meta_key' => '_syndication_expiration_date',
@@ -724,10 +778,42 @@ class FWPLimitPostsByDate {
 				switch ($action) :
 				case 'trash':
 				case 'nuke':
+					$feed = get_syndication_feed_object($post->ID);
+					
+					$thumbId = get_post_thumbnail_id($post->ID);
+					
 					wp_delete_post(
 						/*postid=*/ $post->ID,
 						/*force delete=*/ ('nuke'==$action)
 					);
+					
+					
+					// Check to see whether any other posts
+					// use this as a Featured Image. If not
+					// then zap it.
+					if ("nuke"==$feed->setting('post expiration thumbnail', 'post_expiration_thumbnail', "keep")) :
+						if (strlen($thumbId) > 0) :
+							$qrows = $wpdb->get_results($wpdb->prepare("
+							SELECT meta_value FROM $wpdb->postmeta
+							WHERE meta_key = '_thumbnail_id'
+							AND meta_value = '%d'
+							AND post_id <> '%d'
+							", $thumbId, $post->ID));
+						
+							if (count($qrows) < 1) :
+								FeedWordPress::diagnostic('expiration', 'The expired post ['.$post->ID.']  had an attached Featured Image, which is not used as the Featured Image for any other post. We will now clean up and the image will be '.(('trash'==$action)?'trashed':(('nuke'==$action)?'deleted permanently':'hidden')));
+								
+								wp_delete_attachment(
+								/*id=*/ $thumbId,
+								/*force delete=*/ 'nuke'==$action
+								);
+							else :
+								FeedWordPress::diagnostic('expiration', 'The expired post ['.$post->ID.']  had an attached Featured Image, but it CANNOT be deleted right now because at least one other post uses the same image as its Featured Image.');
+
+							endif;
+						endif;
+
+					endif;
 					break;
 				case 'hide':
 				case 'redirect':
