@@ -451,16 +451,29 @@ class FWPLimitPostsByDate {
 			$peaSelector, $peaParams
 		);
 		?>
-		<h4 style="margin-top: 1.0em; font-weight: normal; clear: left">If an expired post is deleted from the system, and that post has a Featured Image set, what should be done with its Featured Image?</h4>
+		</td></tr>
+		<tr><th scope="row">Expired Featured Images:</th>
+		<td><h4 style="margin-top:0px; font-weight: normal; clear: left">If an expired post is deleted from the system, and that post has a Featured Image set, what should be done with its Featured Image?</h4>
 		<?php
 		$page->setting_radio_control(
 			'post expiration thumbnail', 'post_expiration_thumbnail',
 			$petSelector, $petParams
 		);
 		?>
-
-		<h4 style="margin-top; font-weight: normal; clear: left">Apply to existing <?php print $page->these_posts_phrase(); ?>...</h4>
-		<p>You can apply this expiration-date setting retroactively to <?php print $page->these_posts_phrase(); ?> which have already been syndicated: <input type="submit" name="save[retroexpiration]" value="Apply retroactively" class="button" /></p>
+		</td></tr>
+		
+		<?php if (!$page->for_feed_settings()) : ?>
+		<tr><th>Expiration queue:</th>
+		<td><p><label>Process no more than <input name="fwplpbd_expiration_chunk" type="number" value="<?php print esc_attr(get_option('fwplpbd_expiration_chunk', 25)); ?>" min="1" max="256" /> expired posts per update cycle.</label></p>
+		
+		<p>To avoid seizing up system resources when there are many expired posts to process, this plugin will shuffle out a few posts at a time during FeedWordPress's normal update schedule. What's the maximum number of expired posts FeedWordPress should shuffle off during any given update cycle? (Recommended values: 10-25 for low-volume installations; 25-60 for higher-volume installations, or if you have a large backlog of older posts that you are trying to work through.)</p>
+		</td></tr>
+		<?php endif; ?>
+		
+		<tr>
+		<th>Apply to existing <?php print $page->these_posts_phrase(); ?></th>
+		<td><h4 style="margin-top: 0px; font-weight: normal; clear: left">You can apply this expiration-date setting retroactively to <?php print $page->these_posts_phrase(); ?> which have already been syndicated, using this button:</h4>
+		<p><input type="submit" name="save[retroexpiration]" value="Apply retroactively" class="button" /></p>
 		</td></tr>
 
 		</table>
@@ -549,6 +562,15 @@ class FWPLimitPostsByDate {
 				$page->update_setting('post_expiration_thumbnail', $params['post_expiration_thumbnail']);
 			endif;
 			
+			if (isset($params['fwplpbd_expiration_chunk'])) :
+				$chunk = intval($params['fwplpbd_expiration_chunk']);
+				
+				// Default.
+				if ($chunk < 1) : $chunk = 25; endif;
+				
+				update_option('fwplpbd_expiration_chunk', $chunk);
+			endif;
+			
 			if (isset($params['save']) and is_array($params['save'])
 			and array_key_exists('retroexpiration', $params['save'])) :
 				// This could potentially be a pretty big set
@@ -559,7 +581,7 @@ class FWPLimitPostsByDate {
 				'ignore_sticky_posts' => true,
 				'post_type' => 'post',
 				'post_status' => 'publish',
-				'posts_per_page' => 50,
+				'posts_per_page' => 25,
 				'paged' => $pg,
 				'meta_key' => 'syndication_feed_id',
 				);
@@ -619,6 +641,9 @@ class FWPLimitPostsByDate {
 						if (isset($q->max_num_pages)) :
 							$nPages = intval($q->max_num_pages);
 						endif;
+						
+						// Release me.
+						$q = NULL;
 						
 						$pg++;
 						$qp['paged'] = $pg;
@@ -759,14 +784,17 @@ class FWPLimitPostsByDate {
 		$q = new WP_Query(array(
 		'post_type' => 'post',
 		'post_status' => 'publish',
-		'posts_per_page' => 25,
-		// Let's make sure this stays safe, sane and consensual. If there's a
-		// lot more to check, we'll pick them up on the next go-round.
+		'posts_per_page' => get_option('fwplpbd_expiration_chunk', 25),
+		// Let's make sure this stays safe, sane and consensual. If
+		// there's a lot more to check, we'll pick them up on the next
+		// go-round.
+		
 		'meta_key' => '_syndication_expiration_date',
 		'meta_value' => time(),
 		'meta_compare' => '<=',
-		 // This is string comparison, which is sick and wrong, but it will work
-		 // well enough as a filter if we double-check the results.
+		 // This is string comparison, which is sick and wrong, but it
+		 // will work well enough as a filter if we double-check the
+		 // results.
 		));
 		while ($q->have_posts()) : $q->the_post();
 			$expiration = get_post_meta($post->ID, '_syndication_expiration_date', /*single=*/ true);
