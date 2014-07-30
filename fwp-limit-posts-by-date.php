@@ -17,10 +17,6 @@ License: GPL
  * <http://metavirtual.us/> for their generous support of the FeedWordPress
  * project and for commissioning this add-on module.
  */
-
- /*DBG*/ add_action('init', function () {
- 		 add_theme_support('post-thumbnails');
- });
  
 $dater = new FWPLimitPostsByDate;
 
