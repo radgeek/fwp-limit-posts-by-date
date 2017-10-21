@@ -3,7 +3,7 @@
 Plugin Name: FWP+: Limit posts by date
 Plugin URI: http://projects.radgeek.com/fwp-limit-posts-by-date
 Description: Filter syndicated posts by date or total number of posts, allowing you to set limits so that posts which are too old will not be syndicated.
-Version: 2011.0210
+Version: 2011.0210-2
 Author: Charles Johnson
 Author URI: http://radgeek.com/
 License: GPL
@@ -23,67 +23,67 @@ $dater = new FWPLimitPostsByDate;
 class FWPLimitPostsByDate {
 	var $name;
 
-	function FWPLimitPostsByDate () {
+	function __construct () {
 		$this->name = strtolower(get_class($this));
 
 		// Hook us in
 		add_action(
 			/*hook=*/ 'init',
-			/*function=*/ array(&$this, 'init')
+			/*function=*/ array($this, 'init')
 		);
 
 		add_filter(
 			/*hook=*/ 'pre_get_posts',
-			/*function=*/ array(&$this, 'pre_get_posts'),
+			/*function=*/ array($this, 'pre_get_posts'),
 			/*priority=*/ -100,
 			/*arguments=*/ 1
 		);
 		add_action(
 			/*hook=*/ 'template_redirect',
-			/*function=*/ array(&$this, 'redirect_expired'),
+			/*function=*/ array($this, 'redirect_expired'),
 			/*priority=*/ -100
 		);
 		add_filter(
 			/*hook=*/ 'syndicated_feed_items',
-			/*function=*/ array(&$this, 'syndicated_feed_items'),
+			/*function=*/ array($this, 'syndicated_feed_items'),
 			/*priority=*/ 10,
 			/*arguments=*/ 2
 		);
 
 		add_filter(
 			/*hook=*/ 'syndicated_item',
-			/*function=*/ array(&$this, 'syndicated_item'),
+			/*function=*/ array($this, 'syndicated_item'),
 			/*priority=*/ 10,
 			/*arguments=*/ 2
 		);
 
 		add_filter(
 			/*hook=*/ 'syndicated_post',
-			/*function=*/ array(&$this, 'syndicated_post'),
+			/*function=*/ array($this, 'syndicated_post'),
 			/*priority=*/ 10,
 			/*arguments=*/ 2
 		);
 
-		add_filter('feedwordpress_update_complete', array(&$this, 'process_expirations'), 1000, 1);
+		add_filter('feedwordpress_update_complete', array($this, 'process_expirations'), 1000, 1);
 		
 		// Set up configuration UI
 		add_action(
 			/*hook=*/ 'feedwordpress_admin_page_feeds_meta_boxes',
-			/*function=*/ array(&$this, 'add_settings_box'),
+			/*function=*/ array($this, 'add_settings_box'),
 			/*priority=*/ 100,
 			/*arguments=*/ 1
 		);
 
 		add_action(
 			/*hook=*/ 'feedwordpress_admin_page_feeds_save',
-			/*function=*/ array(&$this, 'save_settings'),
+			/*function=*/ array($this, 'save_settings'),
 			/*priority=*/ 100,
 			/*arguments=*/ 2
 		);
 		
 		// Set up diagnostics
-		add_filter('feedwordpress_diagnostics', array(&$this, 'diagnostics'), 10, 2);
-		add_filter('syndicated_feed_special_settings', array(&$this, 'special_settings'), 10, 2);
+		add_filter('feedwordpress_diagnostics', array($this, 'diagnostics'), 10, 2);
+		add_filter('syndicated_feed_special_settings', array($this, 'special_settings'), 10, 2);
 
 	} /* FWPLimitPostsByDate constructor */
 
@@ -119,7 +119,7 @@ class FWPLimitPostsByDate {
 
 	} /* FWPLimitPostsByDate::init () */
 
-	function pre_get_posts (&$query) {
+	function pre_get_posts ($query) {
 		if ($query->is_singular) :
 			// This is a special post status for hiding posts that have expired
 			register_post_status('expired', array(
@@ -167,7 +167,7 @@ class FWPLimitPostsByDate {
 		add_meta_box(
 			/*id=*/ "feedwordpress_{$this->name}_box",
 			/*title=*/ __("Limit posts by date"),
-			/*callback=*/ array(&$this, 'display_settings'),
+			/*callback=*/ array($this, 'display_settings'),
 			/*page=*/ $page->meta_box_context(),
 			/*context=*/ $page->meta_box_context()
 		);
@@ -719,7 +719,7 @@ class FWPLimitPostsByDate {
 			break;
 		case 'latest_first':
 		case 'earliest_first':
-			usort($posts, array(&$this, "syndicated_item_sort_{$method}"));
+			usort($posts, array($this, "syndicated_item_sort_{$method}"));
 			break;
 		default:
 			// NOOP
